@@ -1436,21 +1436,28 @@ A paramiko SSHException occurred during connection creation:
         delay_factor = self.select_delay_factor(delay_factor)
         sleep_time = delay_factor * 0.25
         self.clear_buffer()
+        start_time = time.time()
         self.write_channel(self.RETURN)
+        returns_sent = 1
+        output = ""
 
         if pattern:
             prompt = self.read_until_pattern(pattern=pattern)
         else:
             # Initial read
             time.sleep(sleep_time)
-            prompt = self.read_channel().strip()
+            output = self.read_channel()
+            prompt = output.strip()
 
             count = 0
             while count <= 12 and not prompt:
                 if not prompt:
                     self.write_channel(self.RETURN)
+                    returns_sent += 1
                     time.sleep(sleep_time)
-                    prompt = self.read_channel().strip()
+                    new_data = self.read_channel()
+                    output += new_data
+                    prompt = new_data.strip()
                     if sleep_time <= 3:
                         # Double the sleep_time when it is small
                         sleep_time *= 2
@@ -1461,11 +1468,40 @@ A paramiko SSHException occurred during connection creation:
         # If multiple lines in the output take the last line
         prompt = prompt.split(self.RESPONSE_RETURN)[-1]
         prompt = prompt.strip()
+        if prompt and returns_sent > 1:
+            self._read_pending_prompts(prompt, output, returns_sent, start_time)
         self.clear_buffer()
         if not prompt:
             raise ValueError(f"Unable to find prompt: {prompt}")
         log.debug(f"[find_prompt()]: prompt is {prompt}")
         return prompt
+
+    def _read_pending_prompts(
+        self, prompt: str, output: str, returns_sent: int, start_time: float
+    ) -> None:
+        """Read the prompts still owed for the extra RETURNs find_prompt() sent.
+
+        A device that answers RETURN slower than find_prompt() polls gets several
+        RETURNs and answers each with its own prompt, in order. find_prompt() returns
+        on the first; the rest arrive later and would sit in front of the next
+        command's echo. With cmd_verify off, send_command() then matches one of them
+        and returns before the command output arrives -- an empty or truncated
+        result and no error.
+
+        The first prompt took the device `elapsed` seconds, so at a steady pace the
+        remaining ones arrive within (returns_sent - 1) * elapsed. Past that bound
+        (a device that drops type-ahead never sends them) give up silently: the
+        caller is then exactly where it was without this wait.
+        """
+        elapsed = time.time() - start_time
+        deadline = time.time() + (returns_sent - 1) * elapsed
+        loop_delay = 0.025
+        while output.count(prompt) < returns_sent and time.time() < deadline:
+            time.sleep(loop_delay)
+            output += self.read_channel()
+        log.debug(
+            f"[find_prompt()]: {output.count(prompt)} prompt(s) for {returns_sent} RETURN(s) sent"
+        )
 
     def clear_buffer(
         self,
