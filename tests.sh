@@ -18,6 +18,7 @@ uv run --frozen pytest -v -s tests/unit/test_arista.py
 uv run --frozen pytest -v -s tests/unit/test_fortinet.py
 uv run --frozen pytest -v -s tests/unit/test_utilities.py
 uv run --frozen pytest -v -s tests/unit/test_ssh_autodetect.py
+uv run --frozen pytest -v -s tests/unit/test_tplink_find_prompt.py
 uv run --frozen pytest -v -s tests/unit/test_connection.py
 uv run --frozen pytest -v -s tests/unit/test_entry_points.py
 uv run --frozen pytest -v -s tests/unit/test_session_log.py
