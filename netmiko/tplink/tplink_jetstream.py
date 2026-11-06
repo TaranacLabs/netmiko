@@ -29,6 +29,21 @@ class TPLinkJetStreamBase(CiscoSSHConnection):
         time.sleep(0.3 * self.global_delay_factor)
         self.clear_buffer()
 
+    def find_prompt(self, delay_factor: float = 1.0, pattern: Optional[str] = None) -> str:
+        """Send a single RETURN and read until the prompt.
+
+        JetStream answers RETURN with a bare newline first and sends the prompt in a
+        later segment. The generic find_prompt() polls every 25 ms (fast_cli) and sends
+        another RETURN on every empty read, so it usually sends several. The prompts
+        answering the extra RETURNs arrive after find_prompt() has returned, ahead of
+        the next command's echo. As cmd_verify is disabled for this platform,
+        send_command() then matches one of those prompts and returns before the
+        command's output.
+        """
+        if pattern is None:
+            pattern = r"[>#]\s*$"
+        return super().find_prompt(delay_factor=delay_factor, pattern=pattern)
+
     def enable(
         self,
         cmd: str = "",
