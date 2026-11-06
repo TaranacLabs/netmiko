@@ -21,10 +21,14 @@ BODY += "end\n"
 
 
 class JetStreamCLI:
-    """Answers RETURN with "\\n" now and the prompt `latency` later, in input order."""
+    """Answers RETURN with "\\n" now and the prompt `latency` later, in input order.
 
-    def __init__(self, latency):
+    With `split`, the prompt's terminator arrives `split` seconds after the hostname.
+    """
+
+    def __init__(self, latency, split=0.0):
         self.latency = latency
+        self.split = split
         self.pending = []  # (ready_at, text)
         self.busy_until = 0.0
         self.returns = 0
@@ -35,7 +39,12 @@ class JetStreamCLI:
             self.returns += 1
             self.pending.append((start + 0.002, "\n"))
             self.busy_until = start + self.latency
-            self.pending.append((self.busy_until, "\n" + PROMPT))
+            if self.split:
+                self.pending.append((self.busy_until, "\n" + PROMPT[:-1]))
+                self.busy_until += self.split
+                self.pending.append((self.busy_until, PROMPT[-1]))
+            else:
+                self.pending.append((self.busy_until, "\n" + PROMPT))
             return
         ready = start + 0.002
         self.pending.append((ready, data.strip() + "\n"))
@@ -109,3 +118,19 @@ def test_generic_find_prompt_leaves_a_prompt_pending():
     assert device.returns > 1
     time.sleep(0.3)
     assert PROMPT in device.read()
+
+
+def test_send_command_waits_for_a_split_prompt():
+    """The hostname arrives without its terminator, which is also a line of the config."""
+    conn = connect(JetStreamCLI(0.005, split=0.1), TPLinkJetStreamBase)
+    assert conn.find_prompt() == PROMPT
+    output = conn.send_command("show running-config", read_timeout=5)
+    assert output.rstrip().endswith("end")
+
+
+def test_generic_find_prompt_returns_a_split_prompt_without_terminator():
+    """The failure the override avoids: send_command() stops at "hostname switch1"."""
+    conn = connect(JetStreamCLI(0.005, split=0.1), BaseConnection)
+    assert conn.find_prompt() == PROMPT[:-1]
+    output = conn.send_command("show running-config", read_timeout=5)
+    assert not output.rstrip().endswith("end")

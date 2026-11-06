@@ -39,6 +39,10 @@ class TPLinkJetStreamBase(CiscoSSHConnection):
         the next command's echo. As cmd_verify is disabled for this platform,
         send_command() then matches one of those prompts and returns before the
         command's output.
+
+        A read can also end inside the prompt, before its terminator. The generic
+        find_prompt() then returns the bare hostname, and send_command() stops at the
+        first line of output that contains it, e.g. the hostname line of the config.
         """
         if pattern is None:
             pattern = r"[>#]\s*$"
